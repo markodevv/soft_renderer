@@ -56,9 +56,9 @@ struct v3
 
 struct Box
 {
-    int x1, y1, x2, y2;
+    float x1, y1, x2, y2;
 
-    int& operator[](int index) 
+    float& operator[](int index) 
     {
         return *(&x1 + index);
     }
@@ -81,9 +81,25 @@ swap(int* x, int* y)
 }
 
 static void 
+swap(float* x, float* y)
+{
+    float temp = *x;
+    *x = *y;
+    *y = temp;
+}
+
+static void 
 swap(v2i* x, v2i* y)
 {
     v2i temp = *x;
+    *x = *y;
+    *y = temp;
+}
+
+static void 
+swap(v3* x, v3* y)
+{
+    v3 temp = *x;
     *x = *y;
     *y = temp;
 }
@@ -338,7 +354,7 @@ draw_triangle(v2i p1, v2i p2, v2i p3, TGAImage* image, TGAColor color)
 }
 
 static Box
-get_bounding_box(v2i p[3])
+triangle_bounding_box(v3 p[3])
 {
     Box out = {};
 
@@ -353,7 +369,7 @@ get_bounding_box(v2i p[3])
 
 
 v3 
-barycentric_coord(v2i pts[3], v2i p)
+barycentric_coord(v3 pts[3], v2i p)
 {
       v3 u = cross_product({(float)pts[2].x-pts[0].x, (float)pts[1].x-pts[0].x, (float)pts[0].x-p.x},
                            {(float)pts[2].y-pts[0].y, (float)pts[1].y-pts[0].y, (float)pts[0].y-p.y});
@@ -364,14 +380,15 @@ barycentric_coord(v2i pts[3], v2i p)
     return {1.0f-(u.x+u.y)/u.z, u.y/u.z, u.x/u.z};
 }
 
+
 static void
-draw_triangle(v2i p[3], TGAImage* image, TGAColor color)
+draw_triangle(v3 p[3], TGAImage* image, TGAColor color, int (*zbuffer)[1280])
 {
     if (p[0].y > p[1].y) { swap(&p[0], &p[1]); }
     if (p[0].y > p[2].y) { swap(&p[0], &p[2]); }
     if (p[1].y > p[2].y) { swap(&p[1], &p[2]); }
 
-    Box box = get_bounding_box(p);
+    Box box = triangle_bounding_box(p);
 
     for (int y = box.y1; y <= box.y2; ++y)
     {
@@ -380,7 +397,18 @@ draw_triangle(v2i p[3], TGAImage* image, TGAColor color)
             v3 bc_coord = barycentric_coord(p, {x, y});
             if (bc_coord.x<0.0f || bc_coord.y<0.0f || bc_coord.z<0.0f) 
                 continue; 
-            image->set(x, y, color); 
+
+            int z = 0;
+            for (int i = 0; i < 3; ++i)
+            {
+                z += p[i].z * bc_coord[i];
+            }
+
+            if (zbuffer[x][y] < z)
+            {
+                zbuffer[x][y] = z;
+                image->set(x, y, color); 
+            }
         }
     }
 }
@@ -419,16 +447,26 @@ main(int argc, char** argv)
             }
         }
     }
-    int w = 1280;
-    int h = 1280;
+    const int w = 1280;
+    const int h = 1280;
 	TGAImage image(w, h, TGAImage::RGB);
+
+    int (*zbuffer)[w] = new int[w][h];
+
+    for (int x = 0; x < w; ++x)
+    {
+        for (int y = 0; y < h; ++y)
+        {
+            zbuffer[x][y] = -2147483648;
+        }
+    }
 
     v3 light_direction = {0.0f, 0.0f, 1.0f};
 
     for (int i = 0; i < face_count; ++i)
     {
         Face face = faces[i];
-        v2i t[3];
+        v3 t[3];
         v3 vert[3];
         for (int j = 0; j < 3; ++j)
         {
@@ -436,14 +474,14 @@ main(int argc, char** argv)
 
             int x = (v.x+1.0f)*w/2.0f; 
             int y = (v.y+1.0f)*h/2.0f; 
-            t[j] = {x, y};
+            t[j] = {(float)x, (float)y, v.z};
             vert[j] = v;
         }
         v3 normal = cross_product(vert[0]-vert[1], vert[1]-vert[2]);
         float light = dot_product(v3_normalize(normal), light_direction);
         if (light > 0)
         {
-            draw_triangle(t, &image, TGAColor(light*255, light*255, light*255, 255));
+            draw_triangle(t, &image, TGAColor(light*255, light*255, light*255, 255), zbuffer);
         }
     }
 
