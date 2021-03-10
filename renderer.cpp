@@ -425,6 +425,9 @@ draw_triangle(v3 p[3], v3 tc[3], float light_intensity, TGAImage* texture, TGAIm
     if (p[0].y > p[1].y) { swap(&p[0], &p[1]); }
     if (p[0].y > p[2].y) { swap(&p[0], &p[2]); }
     if (p[1].y > p[2].y) { swap(&p[1], &p[2]); }
+    if (tc[0].y > tc[1].y) { swap(&tc[0], &tc[1]); }
+    if (tc[0].y > tc[2].y) { swap(&tc[0], &tc[2]); }
+    if (tc[1].y > tc[2].y) { swap(&tc[1], &tc[2]); }
 
     Box box = triangle_bounding_box(p);
 
