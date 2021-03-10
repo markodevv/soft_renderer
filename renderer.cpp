@@ -169,34 +169,19 @@ draw_line(int x0, int y0, int x1, int y1, TGAImage* image, TGAColor color)
 
 
 
-static int 
-get_vertex_count_from_file(char* file)
+struct ModelInfo
 {
+    int vertex_count;
+    int face_count;
+    int texture_vertex_count;
+};
+
+static ModelInfo
+get_model_info(char* file)
+{
+    ModelInfo out = {};
     char line[512];
     FILE* fp = fopen(file, "r");
-    int vertex_count = 0;
-
-    if (file)
-    {
-        while(fgets(line, 512, fp)) 
-        {
-            if (line[0] == 'v' && line[1] == ' ')
-            {
-                vertex_count++;
-            }
-        }
-    }
-    fclose(fp);
-
-    return vertex_count;
-}
-
-static int 
-get_face_count_from_file(char* file)
-{
-    char line[512];
-    FILE* fp = fopen(file, "r");
-    int face_count = 0;
 
     if (file)
     {
@@ -204,14 +189,23 @@ get_face_count_from_file(char* file)
         {
             if (line[0] == 'f' && line[1] == ' ')
             {
-                face_count++;
+                out.face_count++;
+            }
+            else if (line[0] == 'v' && line[1] == 't')
+            {
+                out.texture_vertex_count++;
+            }
+            else if (line[0] == 'v' && line[1] == ' ')
+            {
+                out.vertex_count++;
             }
         }
     }
     fclose(fp);
 
-    return face_count;
+    return out;
 }
+
 
 
 static v3
@@ -293,12 +287,56 @@ get_face_from_line(char line[512])
 
     return out;
 }
-
 static v3
+get_texture_vert_from_line(char line[512])
+{
+    v3 out = {};
+    float data[3];
+    char number_str[50];
+    int vertex_axis = 0;
+
+    for (int i = 0; line[i] != '\0'; ++i)
+    {
+        int sign = 1;
+
+        if (line[i] == '-')
+        {
+            sign = -1;
+            i++;
+        }
+        if (isdigit(line[i]))
+        {
+            int number_str_index = 0;
+            while(isdigit(line[i]) || line[i] == '.')
+            {
+                number_str[number_str_index] = line[i];
+                number_str_index++;
+                i++;
+            }
+            number_str[number_str_index] = '\0';
+            data[vertex_axis] = (float)(atof(number_str) * sign);
+            vertex_axis++;
+            number_str_index = 0;
+        }
+    }
+
+    out.x = data[0];
+    out.y = data[1];
+    out.z = data[2];
+
+    return out;
+}
+
+inline static v3
 vertex_from_face(Face face, v3* vertices, int index)
 {
-    v3 out = vertices[face.vertex_index[index]-1];
-    return out;
+    return vertices[face.vertex_index[index]-1];
+}
+
+inline static v3
+texture_vertex_from_face(Face face, v3* tex_vertices, int index)
+{
+    return tex_vertices[face.text_coord[index]-1];
 }
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
@@ -382,7 +420,7 @@ barycentric_coord(v3 pts[3], v2i p)
 
 
 static void
-draw_triangle(v3 p[3], TGAImage* image, TGAColor color, int (*zbuffer)[1280])
+draw_triangle(v3 p[3], v3 tc[3], float light_intensity, TGAImage* texture, TGAImage* image, int (*zbuffer)[1024])
 {
     if (p[0].y > p[1].y) { swap(&p[0], &p[1]); }
     if (p[0].y > p[2].y) { swap(&p[0], &p[2]); }
@@ -390,6 +428,7 @@ draw_triangle(v3 p[3], TGAImage* image, TGAColor color, int (*zbuffer)[1280])
 
     Box box = triangle_bounding_box(p);
 
+    int total_height = p[3].y - p[1].y;
     for (int y = box.y1; y <= box.y2; ++y)
     {
         for (int x = box.x1; x <= box.x2; ++x)
@@ -399,15 +438,25 @@ draw_triangle(v3 p[3], TGAImage* image, TGAColor color, int (*zbuffer)[1280])
                 continue; 
 
             int z = 0;
+            int texture_x = 0;
+            int texture_y = 0;
+
             for (int i = 0; i < 3; ++i)
             {
                 z += p[i].z * bc_coord[i];
+                texture_x += (int)(tc[i].x * bc_coord[i] * texture->get_width());
+                texture_y += (int)(tc[i].y * bc_coord[i] * texture->get_height());
             }
+
 
             if (zbuffer[x][y] < z)
             {
                 zbuffer[x][y] = z;
-                image->set(x, y, color); 
+                TGAColor color = texture->get(texture_x, texture_y); 
+                color.r *= light_intensity;
+                color.g *= light_intensity;
+                color.b *= light_intensity;
+                image->set(x, y, color);
             }
         }
     }
@@ -417,22 +466,21 @@ int
 main(int argc, char** argv)
 {
     char* head_model = "../head.obj";
-    int vertex_index = 0;
-    int face_index = 0;
 
-    int vertex_count = 0;
-    vertex_count = get_vertex_count_from_file(head_model);
-    v3* vertices = (v3*)malloc(sizeof(v3) * vertex_count);
+    ModelInfo model_info = get_model_info(head_model);
 
-    int face_count = 0;
-    face_count = get_face_count_from_file(head_model);
-    Face* faces = (Face*)malloc(sizeof(Face) * face_count);
+    v3* vertices = (v3*)malloc(sizeof(v3) * model_info.vertex_count);
+    Face* faces = (Face*)malloc(sizeof(Face) * model_info.face_count);
+    v3* texture_vertices = (v3*)malloc(sizeof(v3) * model_info.texture_vertex_count);
 
     char line[512];
     FILE* file = fopen(head_model, "r");
 
     if (file)
     {
+        int vertex_index = 0;
+        int face_index = 0;
+        int texture_vertex_index = 0;
         while(fgets(line, 512, file)) 
         {
             if (line[0] == 'v' && line[1] == ' ')
@@ -445,11 +493,24 @@ main(int argc, char** argv)
                 faces[face_index] = get_face_from_line(line);
                 face_index++;
             }
+            else if (line[0] == 'v' && line[1] == 't')
+            {
+                texture_vertices[texture_vertex_index] = get_texture_vert_from_line(line);
+                texture_vertex_index++;
+            }
         }
     }
-    const int w = 1280;
-    const int h = 1280;
+    const int w = 1024;
+    const int h = 1024;
 	TGAImage image(w, h, TGAImage::RGB);
+
+    const char* texture_name = "../african_head_diffuse.tga";
+    TGAImage head_texture;
+    if (!head_texture.read_tga_file(texture_name))
+    {
+        printf("Failed to load %s .\n", texture_name);
+    }
+    head_texture.flip_vertically();
 
     int (*zbuffer)[w] = new int[w][h];
 
@@ -461,16 +522,17 @@ main(int argc, char** argv)
         }
     }
 
-    v3 light_direction = {0.0f, 0.0f, 1.0f};
-
-    for (int i = 0; i < face_count; ++i)
+    const v3 light_direction = {0.0f, 0.0f, 1.0f};
+    for (int i = 0; i < model_info.face_count; ++i)
     {
         Face face = faces[i];
         v3 t[3];
         v3 vert[3];
+        v3 text_coord[3];
         for (int j = 0; j < 3; ++j)
         {
             v3 v = vertex_from_face(face, vertices, j);
+            text_coord[j] = texture_vertex_from_face(face, texture_vertices, j);
 
             int x = (v.x+1.0f)*w/2.0f; 
             int y = (v.y+1.0f)*h/2.0f; 
@@ -478,10 +540,10 @@ main(int argc, char** argv)
             vert[j] = v;
         }
         v3 normal = cross_product(vert[0]-vert[1], vert[1]-vert[2]);
-        float light = dot_product(v3_normalize(normal), light_direction);
-        if (light > 0)
+        float light_intensity = dot_product(v3_normalize(normal), light_direction);
+        if (light_intensity > 0)
         {
-            draw_triangle(t, &image, TGAColor(light*255, light*255, light*255, 255), zbuffer);
+            draw_triangle(t, text_coord, light_intensity, &head_texture, &image, zbuffer);
         }
     }
 
