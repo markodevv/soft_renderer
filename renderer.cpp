@@ -341,6 +341,25 @@ draw_triangle(vec3 p[3], vec3 tc[3], float light_intensity, TGAImage* texture, T
     }
 }
 
+inline static mat4
+mat4_look_at(vec3 eye, vec3 target, vec3 up)
+{
+    vec3 z = vec3_normalized(eye-target);
+    vec3 x = vec3_normalized(vec3_cross(vec3_normalized(up), z));
+    vec3 y = vec3_normalized(vec3_cross(z, x));
+    mat4 out = mat4_identity();
+
+    for (sizet i = 0; i < 3; ++i)
+    {
+        out[0][i] = x[i];
+        out[1][i] = y[i];
+        out[2][i] = z[i];
+        out[i][3] = -target[i];
+    }
+
+    return out;
+}
+
 int
 main(int argc, char** argv)
 {
@@ -405,23 +424,36 @@ main(int argc, char** argv)
 
     vec3 light_direction = {0.0f, 0.0f, 1.0f};
     light_direction = vec3_normalized(light_direction);
-    float c = -3.0f;
+
 
     mat4 projection;
     projection = {
-        1.0f, 0.0f, 0.0f,    0.0f,
-        0.0f, 1.0f, 0.0f,    0.0f,
-        0.0f, 0.0f, 1.0f,    0.0f,
-        0.0f, 0.0f, 1.0f/c, 1.0f,
+        1.0f, 0.0f,  0.0f,   0.0f,
+        0.0f, 1.0f,  0.0f,   0.0f,
+        0.0f, 0.0f,  1.0f,   0.0f,
+        0.0f, 0.0f, -1.0f/3, 1.0f,
     };
 
-    f32 x = WIDTH/8.0f;
-    f32 y = HEIGHT/8.0f;
     f32 w = WIDTH*3/4;
     f32 h = HEIGHT*3/4;
     f32 d = DEPTH/2.0f;
+    f32 x = 100.0f;
+    f32 y = 100.0f;
 
-    mat4 model = mat4_translate({x+w/2.0f, y+h/2.0f, d}) * mat4_scale({w/2.0f, h/2.0f, d});
+    mat4 view_port = {
+        w/2.0f,    0.0f, 0.0f, x+w/2.0f,
+        0.0f, h/2.0f,    0.0f, y+h/2.0f,
+        0.0f, 0.0f, d/2.0f,    d/2.0f, 
+        0.0f, 0.0f, 0.0f, 1.0f,
+    };
+
+    Camera cam;
+    cam.position = {3.0f, 3.0f, 1.0f};
+    cam.direction = {0.0f, 0.0f, 1.0f};
+    cam.up = {0.0f, 1.0f, 0.0f};
+
+    mat4 view = camera_transform(&cam);
+    view = mat4_look_at(cam.position, {}, cam.up);
 
     for (int i = 0; i < model_info.face_count; ++i)
     {
@@ -436,7 +468,7 @@ main(int argc, char** argv)
 
 
             vec4 vec4d = {vertex.x, vertex.y, vertex.z, 1.0f};
-            vec4 temp = model * projection * vec4d;
+            vec4 temp = view_port * projection * view * vec4d;
             world_coord[j] = {temp.x/temp.w, temp.y/temp.w, temp.z/temp.w};
             local_coord[j] = vertex;
         }

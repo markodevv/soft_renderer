@@ -5,7 +5,7 @@
 #define global_variable static 
 #define local_persist static
 
-#define PI 3.14159265359
+#define PI 3.1415926535f
 
 #include <stdint.h>
 #include <stddef.h>
@@ -306,52 +306,26 @@ mat4_transpose(mat4 matrix)
 
     return out;
 }
-
-inline mat4
-mat4_orthographic(f32 w, f32 h)
-{
-    mat4 out = {
-        2/w,  0.0f, 0.0f, -1.0f, 
-        0.0f, 2/h,  0.0f, -1.0f,
-        0.0f, 0.0f, 0.1f,  0.0f,
-        0.0f, 0.0f, 0.0f,  1.0f
-    };
-
-    return out;
-}
-
 inline f32
 degrees_to_radians(f32 d) 
 {
     return (d*((f32)PI/180));
 }
 
-inline mat4
-mat4_perspective(f32 w, f32 h, f32 fov, f32 n, f32 f)
-{
-    mat4 out =
-    {
-        2/w,    0.0f, 0.0f, -1.0f,
-        0.0f,   2/h,  0.0f, -1.0f,
-        0.0f,   0.0f, 1.0f,  0.0f,
-        0.0f,   0.0f, 0.5f,  1.0f
-    };
-    return out;
-}
 
 inline mat4
 camera_transform(Camera* cam)
 {
-    vec3 f = vec3_normalized(cam->direction);
-    vec3 u = vec3_normalized(cam->up);
-    vec3 r = vec3_normalized(vec3_cross(cam->up, cam->direction));
+    vec3 z = vec3_normalized(cam->direction);
+    vec3 y = vec3_normalized(cam->up);
+    vec3 x = vec3_normalized(vec3_cross(cam->up, cam->direction));
     vec3 t = cam->position;
 
     mat4 out =
     {
-        r.x,  r.y,  r.z,  -t.x,
-        u.x,  u.y,  u.z,  -t.y,
-        f.x,  f.y,  f.z,  -t.z,
+        x.x,  x.y,  x.z,  -t.x,
+        y.x,  y.y,  y.z,  -t.y,
+        z.x,  z.y,  z.z,  -t.z,
         0.0f, 0.0f, 0.0f,  1.0f
     };
 
