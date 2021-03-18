@@ -1,31 +1,8 @@
 #if !defined(MATH_H)
 #define MATH_H
 
-#define internal static 
-#define global_variable static 
-#define local_persist static
 
 #define PI 3.1415926535f
-
-#include <stdint.h>
-#include <stddef.h>
-
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef float f32;
-typedef double f64;
-
-typedef i8 b8;
-typedef size_t sizet;
-
 
 struct vec2
 {
@@ -328,6 +305,25 @@ camera_transform(Camera* cam)
         z.x,  z.y,  z.z,  -t.z,
         0.0f, 0.0f, 0.0f,  1.0f
     };
+
+    return out;
+}
+
+inline mat4
+mat4_look_at(vec3 eye, vec3 target, vec3 up)
+{
+    vec3 z = vec3_normalized(eye-target);
+    vec3 x = vec3_normalized(vec3_cross(vec3_normalized(up), z));
+    vec3 y = vec3_normalized(vec3_cross(z, x));
+    mat4 out = mat4_identity();
+
+    for (sizet i = 0; i < 3; ++i)
+    {
+        out[0][i] = x[i];
+        out[1][i] = y[i];
+        out[2][i] = z[i];
+        out[i][3] = -target[i];
+    }
 
     return out;
 }
