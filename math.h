@@ -83,6 +83,16 @@ struct Camera
     vec3 up;
 };
 
+struct Box
+{
+    f32 x1, y1, x2, y2;
+
+    f32& operator[](i32 index) 
+    {
+        return *(&x1 + index);
+    }
+};
+
 inline f32 
 &vec2::operator[](sizet i) 
 {
@@ -215,7 +225,7 @@ mat4::operator*(vec4& other)
     return out;
 }
 
-inline mat4
+internal inline mat4
 mat4_identity()
 {
     mat4 out = {};
@@ -227,7 +237,7 @@ mat4_identity()
     return out;
 }
 
-inline mat4
+internal inline mat4
 mat4_scale(vec3 v)
 {
     mat4 out = mat4_identity();
@@ -250,7 +260,7 @@ mat4_translate(vec3 v)
     return out;
 }
 
-inline mat4
+internal inline mat4
 mat4_rotate(f32 angle, vec3 v)
 {
     f32 radians = angle * PI / 180;
@@ -269,7 +279,7 @@ mat4_rotate(f32 angle, vec3 v)
 }
 
 
-inline mat4
+internal inline mat4
 mat4_transpose(mat4 matrix)
 {
     mat4 out;
@@ -283,14 +293,14 @@ mat4_transpose(mat4 matrix)
 
     return out;
 }
-inline f32
+internal inline f32
 degrees_to_radians(f32 d) 
 {
     return (d*((f32)PI/180));
 }
 
 
-inline mat4
+internal inline mat4
 camera_transform(Camera* cam)
 {
     vec3 z = vec3_normalized(cam->direction);
@@ -309,7 +319,7 @@ camera_transform(Camera* cam)
     return out;
 }
 
-inline mat4
+internal inline mat4
 mat4_look_at(vec3 eye, vec3 target, vec3 up)
 {
     vec3 z = vec3_normalized(eye-target);
@@ -324,6 +334,53 @@ mat4_look_at(vec3 eye, vec3 target, vec3 up)
         out[2][i] = z[i];
         out[i][3] = -target[i];
     }
+
+    return out;
+}
+
+
+internal inline Box
+triangle_bounding_box(vec3 p[3])
+{
+    Box out = {};
+
+    out.x1 = min(p[0].x, min(p[1].x, p[2].x));
+    out.y1 = min(p[0].y, min(p[1].y, p[2].y));
+
+    out.x2 = max(p[0].x, max(p[1].x, p[2].x));
+    out.y2 = max(p[0].y, max(p[1].y, p[2].y));
+
+    return out;
+}
+
+internal inline vec3 
+barycentric_coord(vec3 pts[3], vec2 p)
+{
+    vec3 s[2];
+    for (sizet i = 2; i--;)
+    {
+        s[i][0] = pts[2][i]-pts[0][i]; 
+        s[i][1] = pts[1][i]-pts[0][i]; 
+        s[i][2] = pts[0][i]-p[i];
+    }
+    vec3 u = vec3_cross(s[0], s[1]);
+
+    if (std::abs(u.z)>1e-2)
+        return {1.0f-(u.x+u.y)/u.z, u.y/u.z, u.x/u.z};
+
+    return {-1.0f,1.0f,1.0f};
+
+}
+
+internal inline mat4
+mat4_view_port(i32 x, i32 y, i32 w, i32 h, i32 d)
+{
+    mat4 out = {
+        w/2.0f, 0.0f,   0.0f,   x+w/2.0f,
+        0.0f,   h/2.0f, 0.0f,   y+h/2.0f,
+        0.0f,   0.0f,   d,      d, 
+        0.0f,   0.0f,   0.0f,   1.0f,
+    };
 
     return out;
 }
