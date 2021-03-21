@@ -62,10 +62,8 @@ global_variable char DEBUG_string_buffer[512];
 global_variable i32 Bitmap_Width = 800;
 global_variable i32 Bitmap_Height = 600;
 global_variable i32 Depth = 600;
-global_variable BITMAPINFO bitmap_info;
-global_variable void* Bitmap_Memory;
-global_variable f32* ZBuffer;
-global_variable HANDLE semaphore_handle;
+global_variable BITMAPINFO Bitmap_Info;
+global_variable HANDLE Semaphore_Handle;
 
 struct Color
 {
@@ -79,6 +77,8 @@ struct Renderer
     mat4 view;
     Camera camera;
     vec3 light_direction;
+    f32* z_buffer;
+    void* framebuffer;
 };
 
 internal void 
@@ -144,9 +144,9 @@ draw_line(int x0, int y0, int x1, int y1, TGAImage* image, TGAColor color)
 
 
 internal void
-bitmap_set_pixel(i32 x, i32 y, Color color)
+bitmap_set_pixel(u32* framebuffer, i32 x, i32 y, Color color)
 {
-    u32* pixel = (u32*)Bitmap_Memory + (y * Bitmap_Width + x);
+    u32* pixel = framebuffer + (y * Bitmap_Width + x);
     u8* channel = (u8*)pixel;
     *channel = color.b;
     channel++;
@@ -156,6 +156,7 @@ bitmap_set_pixel(i32 x, i32 y, Color color)
     channel++;
 }
 
+/*
 internal void
 bitmap_draw_rect(i32 px, i32 py, i32 w, i32 h)
 {
@@ -167,10 +168,11 @@ bitmap_draw_rect(i32 px, i32 py, i32 w, i32 h)
         }
     }
 }
+*/
 
 
 internal void
-draw_triangle(vec3 p[3], vec3 tc[3], f32 light_intensity, u8* texture, f32 *zbuffer)
+draw_triangle(u32* framebuffer, vec3 p[3], vec3 tc[3], f32 light_intensity, u8* texture, f32 *zbuffer)
 {
     if (p[0].y > p[1].y) { swap(&p[0], &p[1]); }
     if (p[0].y > p[2].y) { swap(&p[0], &p[2]); }
@@ -190,9 +192,9 @@ draw_triangle(vec3 p[3], vec3 tc[3], f32 light_intensity, u8* texture, f32 *zbuf
                 continue; 
 
             f32 z = 0;
-            int texture_x = 0;
-            int texture_y = 0;
-            for (int i = 0; i < 3; ++i)
+            i32 texture_x = 0;
+            i32 texture_y = 0;
+            for (i32 i = 0; i < 3; ++i)
             {
                 z += p[i].z * bc_coord[i];
                 /*
@@ -208,7 +210,7 @@ draw_triangle(vec3 p[3], vec3 tc[3], f32 light_intensity, u8* texture, f32 *zbuf
                 color.r *= light_intensity;
                 color.g *= light_intensity;
                 color.b *= light_intensity;
-                bitmap_set_pixel(x, y, color);
+                bitmap_set_pixel(framebuffer, x, y, color);
             }
         }
     }
@@ -219,47 +221,47 @@ draw_triangle(vec3 p[3], vec3 tc[3], f32 light_intensity, u8* texture, f32 *zbuf
 
 
 internal void
-clear_z_buffer()
+clear_z_buffer(Renderer* ren)
 {
     for (int y = 0; y < Bitmap_Height; ++y)
     {
         for (int x = 0; x < Bitmap_Width; ++x)
         {
-            ZBuffer[y * Bitmap_Width + x] = -BIG_F32;
+            ren->z_buffer[y * Bitmap_Width + x] = -BIG_F32;
         }
     }
 }
 
 internal void
-win32_resize_bitmap(i32 w, i32 h)
+win32_resize_bitmap(i32 w, i32 h, Renderer* ren)
 {
-    if (Bitmap_Memory)
+    if (ren->framebuffer)
     {
-        free(Bitmap_Memory);
-        free(ZBuffer);
-        Bitmap_Memory = NULL;
+        free(ren->framebuffer);
+        free(ren->z_buffer);
+        ren->framebuffer = NULL;
     }
     Bitmap_Width = w;
     Bitmap_Height = h;
 
-    bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
-    bitmap_info.bmiHeader.biWidth = Bitmap_Width;
-    bitmap_info.bmiHeader.biHeight = Bitmap_Height;
-    bitmap_info.bmiHeader.biPlanes = 1;
-    bitmap_info.bmiHeader.biBitCount = 32;
-    bitmap_info.bmiHeader.biCompression = BI_RGB;
+    Bitmap_Info.bmiHeader.biSize = sizeof(Bitmap_Info.bmiHeader);
+    Bitmap_Info.bmiHeader.biWidth = Bitmap_Width;
+    Bitmap_Info.bmiHeader.biHeight = Bitmap_Height;
+    Bitmap_Info.bmiHeader.biPlanes = 1;
+    Bitmap_Info.bmiHeader.biBitCount = 32;
+    Bitmap_Info.bmiHeader.biCompression = BI_RGB;
 
     i32 bytes_per_pixel = 4;
-    Bitmap_Memory = calloc(w * h * bytes_per_pixel, sizeof(u8));
-    ZBuffer = (f32*)malloc(Bitmap_Width * Bitmap_Height * sizeof(f32));
-    clear_z_buffer();
+    ren->framebuffer = calloc(w * h * bytes_per_pixel, sizeof(u8));
+    ren->z_buffer = (f32*)malloc(Bitmap_Width * Bitmap_Height * sizeof(f32));
+    clear_z_buffer(ren);
 }
 
 internal void
-clear_screen()
+clear_screen(Renderer* ren)
 {
-    memset(Bitmap_Memory, 50, Bitmap_Width * Bitmap_Height * 4 * sizeof(u8));
-    clear_z_buffer();
+    memset(ren->framebuffer, 50, Bitmap_Width * Bitmap_Height * 4 * sizeof(u8));
+    clear_z_buffer(ren);
 }
 
 LRESULT CALLBACK 
@@ -276,11 +278,13 @@ win32_window_callback(
     {
         case WM_SIZE:
         {
+            /*
             RECT screen_rect;
             GetClientRect(window_handle, &screen_rect);
             i32 w = screen_rect.right - screen_rect.left;
             i32 h = screen_rect.bottom - screen_rect.top;
             win32_resize_bitmap(w, h);
+            */
         } break;
         default:
         {
@@ -344,6 +348,8 @@ struct TriangleInfo
     vec3 world_coord[3];
     vec3 uv_coord[3];
     f32 light_intensity;
+    f32* z_buffer;
+    void* framebuffer;
 };
 
 global_variable u32 volatile entry_completion_count;
@@ -357,7 +363,7 @@ TriangleInfo Entries[2048];
 
 
 internal void
-PushTriangle(HANDLE semaphore_handle, TriangleInfo& triangle_info)
+PushTriangle(TriangleInfo& triangle_info)
 {
 
     TriangleInfo *Entry = Entries + entry_count;
@@ -367,12 +373,11 @@ PushTriangle(HANDLE semaphore_handle, TriangleInfo& triangle_info)
     
     ++entry_count;
 
-    ReleaseSemaphore(semaphore_handle, 1, 0);
+    ReleaseSemaphore(Semaphore_Handle, 1, 0);
 }
 
 struct Win32ThreadInfo
 {
-    HANDLE semaphore_handle;
     int thread_index;
 };
 
@@ -389,17 +394,18 @@ thread_proc(LPVOID lpParameter)
             CompletePastReadsBeforeFutureReads;
             TriangleInfo *entry = Entries + entry_index;
 
-            draw_triangle(entry->world_coord, 
+            draw_triangle((u32*)entry->framebuffer,
+                          entry->world_coord, 
                           entry->uv_coord, 
                           entry->light_intensity, 
                           NULL, 
-                          ZBuffer);
+                          entry->z_buffer);
 
             InterlockedIncrement((LONG volatile *)&entry_completion_count);
         }
         else
         {
-            WaitForSingleObjectEx(thread_info->semaphore_handle, INFINITE, FALSE);
+            WaitForSingleObjectEx(Semaphore_Handle, INFINITE, FALSE);
         }
     }
 
@@ -407,7 +413,7 @@ thread_proc(LPVOID lpParameter)
 }
 
 internal void
-draw_model(Renderer* ren, Model* model, f32* zbuffer)
+draw_model(Renderer* ren, Model* model)
 {
     for (i32 i = 0; i < model->model_info.face_count; ++i)
     {
@@ -427,13 +433,16 @@ draw_model(Renderer* ren, Model* model, f32* zbuffer)
         }
         vec3 normal = vec3_cross(local_coord[0]-local_coord[1], local_coord[1]-local_coord[2]);
         tri.light_intensity = vec3_dot(vec3_normalized(normal), ren->light_direction);
+        tri.z_buffer = ren->z_buffer;
+        tri.framebuffer = ren->framebuffer;
 
         if (tri.light_intensity > 0)
         {
-            PushTriangle(semaphore_handle, tri);
+            PushTriangle(tri);
         }
     }
 
+    //TODO: check how man entries are actually needed
     while(entry_count != entry_completion_count);
 
     entry_completion_count = 0;
@@ -446,11 +455,14 @@ WinMain(HINSTANCE hinstance,
         LPSTR cmd_line,
         i32 show_code)
 {
-   Win32ThreadInfo thread_info[4];
+    SYSTEM_INFO sys_info;
+    GetSystemInfo(&sys_info);
+    u32 thread_count = sys_info.dwNumberOfProcessors;
+
+    Win32ThreadInfo* thread_info = (Win32ThreadInfo*)malloc(sizeof(Win32ThreadInfo) * thread_count);
 
     u32 initial_count = 0;
-    u32 thread_count = ARRAY_COUNT(thread_info);
-    semaphore_handle = CreateSemaphoreEx(0,
+    Semaphore_Handle = CreateSemaphoreEx(0,
                                          initial_count,
                                          thread_count,
                                          0, 0, SEMAPHORE_ALL_ACCESS);
@@ -459,14 +471,12 @@ WinMain(HINSTANCE hinstance,
         ++thread_index)
     {
         Win32ThreadInfo *info = thread_info + thread_index;
-        info->semaphore_handle = semaphore_handle;
         info->thread_index = thread_index;
         
         DWORD id;
         HANDLE thread_handle = CreateThread(0, 0, thread_proc, info, 0, &id);
         CloseHandle(thread_handle);
     }
-
 
     
     WNDCLASS window_class = {};
@@ -500,7 +510,7 @@ WinMain(HINSTANCE hinstance,
     Model head_model = load_model("../head.obj");
 
 
-    win32_resize_bitmap(Bitmap_Width, Bitmap_Height);
+    win32_resize_bitmap(Bitmap_Width, Bitmap_Height, &renderer);
     b8 running = true;
 
     QueryPerformanceFrequency(&global_pref_count_freq);
@@ -559,6 +569,7 @@ WinMain(HINSTANCE hinstance,
                 } break;
             }
         }
+
         LARGE_INTEGER end_count = win32_get_preformance_counter();
         f32 delta_time = win32_get_elapsed_seconds(last_counter, end_count);
         last_counter = win32_get_preformance_counter();
@@ -577,17 +588,23 @@ WinMain(HINSTANCE hinstance,
         GetClientRect(window_handle, &screen_rect);
         i32 w = screen_rect.right - screen_rect.left;
         i32 h = screen_rect.bottom - screen_rect.top;
+
+        if (w != Bitmap_Width || h != Bitmap_Height)
+        {
+            win32_resize_bitmap(w, h, &renderer);
+        }
+
         HDC device_context = GetDC(window_handle);
 
-        clear_screen();
-        draw_model(&renderer, &head_model, ZBuffer);
+        clear_screen(&renderer);
+        draw_model(&renderer, &head_model);
 
 
         StretchDIBits(device_context,
                      0, 0, Bitmap_Width, Bitmap_Height,
                      0, 0, w, h,
-                     Bitmap_Memory,
-                     &bitmap_info,
+                     renderer.framebuffer,
+                     &Bitmap_Info,
                      DIB_RGB_COLORS,
                      SRCCOPY);
         draw_fps(device_context, delta_time);
