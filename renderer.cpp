@@ -58,6 +58,7 @@ global_variable char DEBUG_string_buffer[512];
 #include "math.h"
 #include "model.cpp"
 
+#define BYTES_PER_PIXEL 4
 #define BIG_F32 214748364.0f
 global_variable i32 Bitmap_Width = 800;
 global_variable i32 Bitmap_Height = 600;
@@ -172,45 +173,45 @@ bitmap_draw_rect(i32 px, i32 py, i32 w, i32 h)
 
 
 internal void
-draw_triangle(u32* framebuffer, vec3 p[3], vec3 tc[3], f32 light_intensity, u8* texture, f32 *zbuffer)
+draw_triangle(void* framebuffer, vec3 v[3], vec3 uv[3], vec3 light_intensity_coord, u8* texture, f32 *zbuffer)
 {
-    if (p[0].y > p[1].y) { swap(&p[0], &p[1]); }
-    if (p[0].y > p[2].y) { swap(&p[0], &p[2]); }
-    if (p[1].y > p[2].y) { swap(&p[1], &p[2]); }
-    if (tc[0].y > tc[1].y) { swap(&tc[0], &tc[1]); }
-    if (tc[0].y > tc[2].y) { swap(&tc[0], &tc[2]); }
-    if (tc[1].y > tc[2].y) { swap(&tc[1], &tc[2]); }
+    if (v[0].y > v[1].y) { swap(&v[0], &v[1]); }
+    if (v[0].y > v[2].y) { swap(&v[0], &v[2]); }
+    if (v[1].y > v[2].y) { swap(&v[1], &v[2]); }
+    if (uv[0].y > uv[1].y) { swap(&uv[0], &uv[1]); }
+    if (uv[0].y > uv[2].y) { swap(&uv[0], &uv[2]); }
+    if (uv[1].y > uv[2].y) { swap(&uv[1], &uv[2]); }
 
-    Box box = triangle_bounding_box(p);
+    Box box = triangle_bounding_box(v);
 
     for (i32 y = (i32)box.y1; y <= (i32)box.y2; ++y)
     {
         for (i32 x = (i32)box.x1; x <= (i32)box.x2; ++x)
         {
-            vec3 bc_coord = barycentric_coord(p, {(f32)x, (f32)y});
+            vec3 bc_coord = barycentric_coord(v, {(f32)x, (f32)y});
             if (bc_coord.x<0.0f || bc_coord.y<0.0f || bc_coord.z<0.0f) 
                 continue; 
 
-            f32 z = 0;
-            i32 texture_x = 0;
-            i32 texture_y = 0;
+            f32 z = 0.0f;
+            f32 light_intensity = 0.0f;
+
             for (i32 i = 0; i < 3; ++i)
             {
-                z += p[i].z * bc_coord[i];
-                /*
-                texture_x += (int)(tc[i].x * bc_coord[i] * texture->get_width());
-                texture_y += (int)(tc[i].y * bc_coord[i] * texture->get_height());
-                */
+                z += v[i].z * bc_coord[i];
             }
+            light_intensity = vec3_dot(light_intensity_coord, bc_coord);
 
             if (z > zbuffer[y * Bitmap_Width + x])
             {
                 zbuffer[y * Bitmap_Width + x] = z;
-                Color color = {255, 255, 255};
-                color.r *= light_intensity;
-                color.g *= light_intensity;
-                color.b *= light_intensity;
-                bitmap_set_pixel(framebuffer, x, y, color);
+                Color color = {};
+                if (light_intensity > 0)
+                {
+                    color.r = 255 * light_intensity;
+                    color.g = 255 * light_intensity;
+                    color.b = 255 * light_intensity;
+                }
+                bitmap_set_pixel((u32*)framebuffer, x, y, color);
             }
         }
     }
@@ -223,9 +224,9 @@ draw_triangle(u32* framebuffer, vec3 p[3], vec3 tc[3], f32 light_intensity, u8* 
 internal void
 clear_z_buffer(Renderer* ren)
 {
-    for (int y = 0; y < Bitmap_Height; ++y)
+    for (i32 y = 0; y < Bitmap_Height; ++y)
     {
-        for (int x = 0; x < Bitmap_Width; ++x)
+        for (i32 x = 0; x < Bitmap_Width; ++x)
         {
             ren->z_buffer[y * Bitmap_Width + x] = -BIG_F32;
         }
@@ -251,8 +252,7 @@ win32_resize_bitmap(i32 w, i32 h, Renderer* ren)
     Bitmap_Info.bmiHeader.biBitCount = 32;
     Bitmap_Info.bmiHeader.biCompression = BI_RGB;
 
-    i32 bytes_per_pixel = 4;
-    ren->framebuffer = calloc(w * h * bytes_per_pixel, sizeof(u8));
+    ren->framebuffer = calloc(w * h * BYTES_PER_PIXEL, sizeof(u8));
     ren->z_buffer = (f32*)malloc(Bitmap_Width * Bitmap_Height * sizeof(f32));
     clear_z_buffer(ren);
 }
@@ -260,7 +260,7 @@ win32_resize_bitmap(i32 w, i32 h, Renderer* ren)
 internal void
 clear_screen(Renderer* ren)
 {
-    memset(ren->framebuffer, 50, Bitmap_Width * Bitmap_Height * 4 * sizeof(u8));
+    memset(ren->framebuffer, 50, Bitmap_Width * Bitmap_Height * BYTES_PER_PIXEL * sizeof(u8));
     clear_z_buffer(ren);
 }
 
@@ -324,9 +324,9 @@ draw_fps(HDC device_context, f32 time)
     text_rect.bottom = 200;
 
     SetTextColor(device_context, RGB(0, 0, 0));
-    char* test = "fps: %ims";
+    char* test = "%i fps";
     char text[20];
-    sprintf_s(text, test, (i32)(time*1000.0f)); 
+    sprintf_s(text, test, (i32)(1.0f/time)); 
     i32 success = DrawText(device_context,
                            text,
                            -1,
@@ -347,26 +347,26 @@ struct TriangleInfo
 {
     vec3 world_coord[3];
     vec3 uv_coord[3];
-    f32 light_intensity;
+    vec3 light_intensity_coord;
     f32* z_buffer;
     void* framebuffer;
 };
 
+#define MAX_ENTRY_COUNT 5120
 global_variable u32 volatile entry_completion_count;
 global_variable u32 volatile next_entry_todo;
 global_variable u32 volatile entry_count;
-TriangleInfo Entries[2048];
+TriangleInfo Entries[MAX_ENTRY_COUNT];
 
-// TODO(casey): Double-check the write ordering stuff on the CPU
 #define CompletePastWritesBeforeFutureWrites _mm_sfence()
 #define CompletePastReadsBeforeFutureReads 
 
 
 internal void
-PushTriangle(TriangleInfo& triangle_info)
+push_triangle(TriangleInfo& triangle_info)
 {
 
-    TriangleInfo *Entry = Entries + entry_count;
+    TriangleInfo *Entry = Entries + (entry_count % MAX_ENTRY_COUNT);
     *Entry = triangle_info;
 
     CompletePastWritesBeforeFutureWrites;
@@ -378,7 +378,7 @@ PushTriangle(TriangleInfo& triangle_info)
 
 struct Win32ThreadInfo
 {
-    int thread_index;
+    i32 thread_index;
 };
 
 DWORD WINAPI
@@ -392,12 +392,15 @@ thread_proc(LPVOID lpParameter)
         {
             i32 entry_index = InterlockedIncrement((LONG volatile *)&next_entry_todo) - 1;
             CompletePastReadsBeforeFutureReads;
-            TriangleInfo *entry = Entries + entry_index;
 
-            draw_triangle((u32*)entry->framebuffer,
+            // NOTE(marko): looping array
+            // TODO(marko): fix array looping causes some triangles not to render
+            TriangleInfo *entry = Entries + (entry_index % MAX_ENTRY_COUNT);
+
+            draw_triangle(entry->framebuffer,
                           entry->world_coord, 
                           entry->uv_coord, 
-                          entry->light_intensity, 
+                          entry->light_intensity_coord,
                           NULL, 
                           entry->z_buffer);
 
@@ -408,8 +411,6 @@ thread_proc(LPVOID lpParameter)
             WaitForSingleObjectEx(Semaphore_Handle, INFINITE, FALSE);
         }
     }
-
-//    return(0);
 }
 
 internal void
@@ -419,35 +420,60 @@ draw_model(Renderer* ren, Model* model)
     {
         Face face = model->faces[i];
         TriangleInfo tri;
-        vec3 local_coord[3];
+        vec3 vertex_normals[3];
 
         for (i32 j = 0; j < 3; ++j)
         {
             vec3 vertex = vertex_from_face(face, model->vertices, j);
-            tri.uv_coord[j] = texture_uv_from_face(face, model->texture_uvs, j);
+            vec3 vertex_normal = vertex_from_face(face, model->vertex_normals, j);
+
 
             vec4 vec4d = {vertex.x, vertex.y, vertex.z, 1.0f};
             vec4 temp = ren->view_port * ren->projection * ren->view * vec4d;
             tri.world_coord[j] = {temp.x/temp.w, temp.y/temp.w, temp.z/temp.w};
-            local_coord[j] = vertex;
+            tri.uv_coord[j] = texture_uv_from_face(face, model->texture_uvs, j);
+            vertex_normals[j] = vertex_normal;
         }
-        vec3 normal = vec3_cross(local_coord[0]-local_coord[1], local_coord[1]-local_coord[2]);
-        tri.light_intensity = vec3_dot(vec3_normalized(normal), ren->light_direction);
+        if (tri.world_coord[0].y > tri.world_coord[1].y) {
+            swap(&tri.world_coord[0], &tri.world_coord[1]); 
+            swap(&vertex_normals[0], &vertex_normals[1]);
+        }
+        if (tri.world_coord[0].y > tri.world_coord[2].y) { 
+            swap(&tri.world_coord[0], &tri.world_coord[2]); 
+            swap(&vertex_normals[0], &vertex_normals[2]);
+        }
+        if (tri.world_coord[1].y > tri.world_coord[2].y) { 
+            swap(&tri.world_coord[1], &tri.world_coord[2]); 
+            swap(&vertex_normals[1], &vertex_normals[2]);
+        }
+        for (i32 k = 0; k < 3; ++k)
+        {
+            tri.light_intensity_coord[k] = max(0.0f, vec3_dot(vertex_normals[k], ren->light_direction));
+        }
+
         tri.z_buffer = ren->z_buffer;
         tri.framebuffer = ren->framebuffer;
 
-        if (tri.light_intensity > 0)
-        {
-            PushTriangle(tri);
-        }
+#ifdef THREADED
+        push_triangle(tri);
+#else
+        draw_triangle(tri.framebuffer,
+                      tri.world_coord, 
+                      tri.uv_coord, 
+                      tri.light_intensity_coord,
+                      NULL, 
+                      tri.z_buffer);
+#endif
     }
 
-    //TODO: check how man entries are actually needed
+#ifdef THREADED
     while(entry_count != entry_completion_count);
 
     entry_completion_count = 0;
     next_entry_todo = 0;
     entry_count = 0;
+#endif
+
 }
 i32
 WinMain(HINSTANCE hinstance,
@@ -455,6 +481,7 @@ WinMain(HINSTANCE hinstance,
         LPSTR cmd_line,
         i32 show_code)
 {
+#ifdef THREADED
     SYSTEM_INFO sys_info;
     GetSystemInfo(&sys_info);
     u32 thread_count = sys_info.dwNumberOfProcessors;
@@ -477,6 +504,7 @@ WinMain(HINSTANCE hinstance,
         HANDLE thread_handle = CreateThread(0, 0, thread_proc, info, 0, &id);
         CloseHandle(thread_handle);
     }
+#endif
 
     
     WNDCLASS window_class = {};
@@ -536,10 +564,9 @@ WinMain(HINSTANCE hinstance,
                 {
 
                     b8 is_down = ((message.lParam & (1 << 31)) == 0);
-                    b8 was_down = ((message.lParam & (1 << 30)) != 0);
                     u32 vk_code = (u32)message.wParam;
 
-                    if (is_down != was_down)
+                    if (is_down)
                     {
                         switch(vk_code)
                         {
@@ -553,11 +580,11 @@ WinMain(HINSTANCE hinstance,
                             } break;
                             case 'W':
                             {
-                                renderer.camera.position.y += 0.1f;
+                                renderer.camera.position.z -= 0.1f;
                             } break;
                             case 'S':
                             {
-                                renderer.camera.position.y -= 0.1f;
+                                renderer.camera.position.z += 0.1f;
                             } break;
                         }
                     }
@@ -569,19 +596,20 @@ WinMain(HINSTANCE hinstance,
                 } break;
             }
         }
-
         LARGE_INTEGER end_count = win32_get_preformance_counter();
         f32 delta_time = win32_get_elapsed_seconds(last_counter, end_count);
         last_counter = win32_get_preformance_counter();
 
-        renderer.view_port = mat4_view_port(100, 100, Bitmap_Width-200, Bitmap_Height-200, Depth/2);
+        renderer.view_port = mat4_view_port(0, 0, Bitmap_Width, Bitmap_Height, Depth/2);
+        f32 ar = Bitmap_Width/(f32)Bitmap_Height;
         renderer.projection = {
-            1.0f, 0.0f,  0.0f,   0.0f,
+            1.0f/ar, 0.0f,  0.0f,   0.0f,
             0.0f, 1.0f,  0.0f,   0.0f,
             0.0f, 0.0f,  1.0f,   0.0f,
             0.0f, 0.0f, -1.0f/3, 1.0f,
         };
-        renderer.view = mat4_look_at(renderer.camera.position, {}, renderer.camera.up);
+        //renderer.view = mat4_look_at(renderer.camera.position, {}, renderer.camera.up);
+        renderer.view = camera_transform(&renderer.camera);
         renderer.light_direction = {0.0f, 0.0f, 1.0f};
 
         RECT screen_rect;
@@ -598,7 +626,6 @@ WinMain(HINSTANCE hinstance,
 
         clear_screen(&renderer);
         draw_model(&renderer, &head_model);
-
 
         StretchDIBits(device_context,
                      0, 0, Bitmap_Width, Bitmap_Height,

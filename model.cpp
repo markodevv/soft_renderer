@@ -11,7 +11,8 @@ struct ModelInfo
 {
     i32 vertex_count;
     i32 face_count;
-    i32 texture_vertex_count;
+    i32 uv_count;
+    i32 vertex_normal_count;
 };
 
 struct Model
@@ -19,10 +20,22 @@ struct Model
     vec3* vertices;
     Face* faces;
     vec3* texture_uvs;
+    vec3* vertex_normals;
 
     ModelInfo model_info;
 };
 
+internal b8
+str_equal(char* s1, char* s2, i32 count)
+{
+    for (sizet i = 0; i < count; ++i)
+    {
+        if (!(s1[i] == s2[i]))
+            return false;
+    }
+    return true;
+}
+ 
 internal ModelInfo
 get_model_info(char* file)
 {
@@ -32,19 +45,27 @@ get_model_info(char* file)
 
     if (file)
     {
+        char keyword[] = "  ";
         while(fgets(line, 512, fp)) 
         {
-            if (line[0] == 'f' && line[1] == ' ')
+            keyword[0] = line[0];
+            keyword[1] = line[1];
+
+            if (str_equal(keyword, "v ", 2))
+            {
+                out.vertex_count++;
+            }
+            else if (str_equal(keyword, "f ", 2))
             {
                 out.face_count++;
             }
-            else if (line[0] == 'v' && line[1] == 't')
+            else if (str_equal(keyword, "vt ", 2))
             {
-                out.texture_vertex_count++;
+                out.uv_count++;
             }
-            else if (line[0] == 'v' && line[1] == ' ')
+            else if (str_equal(keyword, "vn ", 2))
             {
-                out.vertex_count++;
+                out.vertex_normal_count++;
             }
         }
     }
@@ -54,7 +75,7 @@ get_model_info(char* file)
 }
 
 internal vec3
-get_vertex_from_line(char line[512])
+get_vec3_from_line(char line[512])
 {
     vec3 out = {};
     float data[3];
@@ -132,45 +153,6 @@ get_face_from_line(char line[512])
 
     return out;
 }
-internal vec3
-get_texture_vert_from_line(char line[512])
-{
-    vec3 out = {};
-    float data[3];
-    char number_str[50];
-    int vertex_axis = 0;
-
-    for (int i = 0; line[i] != '\0'; ++i)
-    {
-        int sign = 1;
-
-        if (line[i] == '-')
-        {
-            sign = -1;
-            i++;
-        }
-        if (isdigit(line[i]))
-        {
-            int number_str_index = 0;
-            while(isdigit(line[i]) || line[i] == '.')
-            {
-                number_str[number_str_index] = line[i];
-                number_str_index++;
-                i++;
-            }
-            number_str[number_str_index] = '\0';
-            data[vertex_axis] = (float)(atof(number_str) * sign);
-            vertex_axis++;
-            number_str_index = 0;
-        }
-    }
-
-    out.x = data[0];
-    out.y = data[1];
-    out.z = data[2];
-
-    return out;
-}
 
 
 internal Model
@@ -184,30 +166,41 @@ load_model(char* path)
 
     out.vertices = (vec3*)malloc(sizeof(vec3) * out.model_info.vertex_count);
     out.faces = (Face*)malloc(sizeof(Face) * out.model_info.face_count);
-    out.texture_uvs = (vec3*)malloc(sizeof(vec3) * out.model_info.texture_vertex_count);
+    out.texture_uvs = (vec3*)malloc(sizeof(vec3) * out.model_info.uv_count);
+    out.vertex_normals = (vec3*)malloc(sizeof(vec3) * out.model_info.vertex_normal_count);
 
     vec3* vertices = out.vertices;
     Face* faces = out.faces;
     vec3* texture_uvs = out.texture_uvs;
+    vec3* vertex_normals = out.vertex_normals;
 
     if (file)
     {
+        char keyword[] = "  ";
         while(fgets(line, 512, file)) 
         {
-            if (line[0] == 'v' && line[1] == ' ')
+            keyword[0] = line[0];
+            keyword[1] = line[1];
+
+            if (str_equal(keyword, "v ", 2))
             {
-                *vertices = get_vertex_from_line(line);
+                *vertices = get_vec3_from_line(line);
                 vertices++;
             }
-            else if (line[0] == 'f' && line[1] == ' ')
+            else if (str_equal(keyword, "f ", 2))
             {
                 *faces = get_face_from_line(line);
                 faces++;
             }
-            else if (line[0] == 'v' && line[1] == 't')
+            else if (str_equal(keyword, "vt ", 2))
             {
-                *texture_uvs = get_texture_vert_from_line(line);
+                *texture_uvs = get_vec3_from_line(line);
                 texture_uvs++;
+            }
+            else if (str_equal(keyword, "vn ", 2))
+            {
+                *vertex_normals = get_vec3_from_line(line);
+                vertex_normals++;
             }
         }
     }

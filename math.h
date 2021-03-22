@@ -373,7 +373,7 @@ barycentric_coord(vec3 pts[3], vec2 p)
 }
 
 internal inline mat4
-mat4_view_port(i32 x, i32 y, i32 w, i32 h, i32 d)
+mat4_view_port(f32 x, f32 y, f32 w, f32 h, f32 d)
 {
     mat4 out = {
         w/2.0f, 0.0f,   0.0f,   x+w/2.0f,
