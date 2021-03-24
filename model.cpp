@@ -22,6 +22,10 @@ struct Model
     vec3* texture_uvs;
     vec3* vertex_normals;
 
+    vec3 position;
+    vec3 rotation;
+    vec3 scale;
+
     ModelInfo model_info;
 };
 
@@ -43,7 +47,7 @@ get_model_info(char* file)
     char line[512];
     FILE* fp = fopen(file, "r");
 
-    if (file)
+    if (fp)
     {
         char keyword[] = "  ";
         while(fgets(line, 512, fp)) 
@@ -78,13 +82,13 @@ internal vec3
 get_vec3_from_line(char line[512])
 {
     vec3 out = {};
-    float data[3];
+    f32 data[3];
     char number_str[50];
-    int vertex_axis = 0;
+    i32 vertex_axis = 0;
 
-    for (int i = 0; line[i] != '\0'; ++i)
+    for (i32 i = 0; line[i] != '\0'; ++i)
     {
-        int sign = 1;
+        i32 sign = 1;
 
         if (line[i] == '-')
         {
@@ -93,7 +97,7 @@ get_vec3_from_line(char line[512])
         }
         if (isdigit(line[i]))
         {
-            int number_str_index = 0;
+            i32 number_str_index = 0;
             while(isdigit(line[i]) || line[i] == '.')
             {
                 number_str[number_str_index] = line[i];
@@ -101,7 +105,7 @@ get_vec3_from_line(char line[512])
                 i++;
             }
             number_str[number_str_index] = '\0';
-            data[vertex_axis] = (float)(atof(number_str) * sign);
+            data[vertex_axis] = (f32)(atof(number_str) * sign);
             vertex_axis++;
             number_str_index = 0;
         }
@@ -111,6 +115,7 @@ get_vec3_from_line(char line[512])
     out.y = data[1];
     out.z = data[2];
 
+
     return out;
 }
 
@@ -118,18 +123,18 @@ internal Face
 get_face_from_line(char line[512])
 {
     Face out = {};
-    int member_index = 0;
+    i32 member_index = 0;
 
-    for (int i = 0; line[i] != '\0'; ++i)
+    for (i32 i = 0; line[i] != '\0'; ++i)
     {
         if (isdigit(line[i]))
         {
             char number_str[64];
-            int data[3];
+            i32 data[3];
 
-            for (int j = 0; j < 3; ++j)
+            for (i32 j = 0; j < 3; ++j)
             {
-                int number_str_index = 0;
+                i32 number_str_index = 0;
                 while(isdigit(line[i]))
                 {
                     number_str[number_str_index] = line[i];

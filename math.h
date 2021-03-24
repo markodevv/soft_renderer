@@ -22,15 +22,18 @@ struct vec3
 {
     union
     {
+        f32 data[3];
         struct
         {
             f32 x, y, z;
         };
-        f32 data[3];
     };
 
     f32 &operator[](sizet i);
+    vec3 operator*(float s);
+    vec3 operator*(vec3& other);
     vec3 operator-(vec3& other);
+    vec3 operator-();
 };
 
 struct vec3i 
@@ -51,11 +54,15 @@ struct vec4
 {
     union
     {
+        f32 data[4];
         struct
         {
             f32 x, y, z, w;
         };
-        f32 data[4];
+        struct
+        {
+            vec3 xyz;
+        };
     };
 
     f32 &operator[](sizet i);
@@ -81,6 +88,7 @@ struct Camera
     vec3 position;
     vec3 direction;
     vec3 up;
+    vec3 rotation;
 };
 
 struct Box
@@ -105,10 +113,28 @@ inline i32
     return data[i];
 }
 
+inline vec3 
+vec3::operator-()
+{
+    return {-x, -y, -z};
+}
+
 inline vec3
 vec3::operator-(vec3& other)
 {
     return {x - other.x, y - other.y, z - other.z};
+}
+
+inline vec3
+vec3::operator*(vec3& other)
+{
+    return {other.x*x, other.y*y, other.z*z};
+}
+
+inline vec3
+vec3::operator*(f32 s)
+{
+    return {x*s, y*s, z*s};
 }
 
 inline f32 
@@ -128,9 +154,12 @@ vec3_normalized(vec3 v)
 {
     f32 len = vec3_length(v);
 
-    v.x = v.x / len;
-    v.y = v.y / len;
-    v.z = v.z / len;
+    if (len > 0.0f)
+    {
+        v.x = v.x / len;
+        v.y = v.y / len;
+        v.z = v.z / len;
+    }
 
     return v;
 }
@@ -293,12 +322,37 @@ mat4_transpose(mat4 matrix)
 
     return out;
 }
+
 internal inline f32
 degrees_to_radians(f32 d) 
 {
     return (d*((f32)PI/180));
 }
 
+internal inline f32
+radians_to_degrees(f32 r) 
+{
+    return (r*((f32)180/PI));
+}
+
+internal inline f32
+mat4_det(mat4 m)
+{
+    return {
+         m[0][3] * m[1][2] * m[2][1] * m[3][0] - m[0][2] * m[1][3] * m[2][1] * m[3][0] -
+         m[0][3] * m[1][1] * m[2][2] * m[3][0] + m[0][1] * m[1][3] * m[2][2] * m[3][0] +
+         m[0][2] * m[1][1] * m[2][3] * m[3][0] - m[0][1] * m[1][2] * m[2][3] * m[3][0] -
+         m[0][3] * m[1][2] * m[2][0] * m[3][1] + m[0][2] * m[1][3] * m[2][0] * m[3][1] +
+         m[0][3] * m[1][0] * m[2][2] * m[3][1] - m[0][0] * m[1][3] * m[2][2] * m[3][1] -
+         m[0][2] * m[1][0] * m[2][3] * m[3][1] + m[0][0] * m[1][2] * m[2][3] * m[3][1] +
+         m[0][3] * m[1][1] * m[2][0] * m[3][2] - m[0][1] * m[1][3] * m[2][0] * m[3][2] -
+         m[0][3] * m[1][0] * m[2][1] * m[3][2] + m[0][0] * m[1][3] * m[2][1] * m[3][2] +
+         m[0][1] * m[1][0] * m[2][3] * m[3][2] - m[0][0] * m[1][1] * m[2][3] * m[3][2] -
+         m[0][2] * m[1][1] * m[2][0] * m[3][3] + m[0][1] * m[1][2] * m[2][0] * m[3][3] +
+         m[0][2] * m[1][0] * m[2][1] * m[3][3] - m[0][0] * m[1][2] * m[2][1] * m[3][3] -
+         m[0][1] * m[1][0] * m[2][2] * m[3][3] + m[0][0] * m[1][1] * m[2][2] * m[3][3]
+    };
+}
 
 internal inline mat4
 camera_transform(Camera* cam)
@@ -318,6 +372,48 @@ camera_transform(Camera* cam)
 
     return out;
 }
+
+internal inline f32 
+MINOR(f32 m[16], i32 r0, i32 r1, i32 r2, i32 c0, i32 c1, i32 c2)
+{
+    return m[4*r0+c0] * (m[4*r1+c1] * m[4*r2+c2] - m[4*r2+c1] * m[4*r1+c2]) -
+           m[4*r0+c1] * (m[4*r1+c0] * m[4*r2+c2] - m[4*r2+c0] * m[4*r1+c2]) +
+           m[4*r0+c2] * (m[4*r1+c0] * m[4*r2+c1] - m[4*r2+c0] * m[4*r1+c1]);
+}
+ 
+ 
+internal inline void 
+adjoint(f32 m[16], f32 adjOut[16])
+{
+    adjOut[ 0] =  MINOR(m,1,2,3,1,2,3); adjOut[ 1] = -MINOR(m,0,2,3,1,2,3); adjOut[ 2] =  MINOR(m,0,1,3,1,2,3); adjOut[ 3] = -MINOR(m,0,1,2,1,2,3);
+    adjOut[ 4] = -MINOR(m,1,2,3,0,2,3); adjOut[ 5] =  MINOR(m,0,2,3,0,2,3); adjOut[ 6] = -MINOR(m,0,1,3,0,2,3); adjOut[ 7] =  MINOR(m,0,1,2,0,2,3);
+    adjOut[ 8] =  MINOR(m,1,2,3,0,1,3); adjOut[ 9] = -MINOR(m,0,2,3,0,1,3); adjOut[10] =  MINOR(m,0,1,3,0,1,3); adjOut[11] = -MINOR(m,0,1,2,0,1,3);
+    adjOut[12] = -MINOR(m,1,2,3,0,1,2); adjOut[13] =  MINOR(m,0,2,3,0,1,2); adjOut[14] = -MINOR(m,0,1,3,0,1,2); adjOut[15] =  MINOR(m,0,1,2,0,1,2);
+}
+ 
+internal inline f32
+det(float m[16])
+{
+    return m[0] * MINOR(m, 1, 2, 3, 1, 2, 3) -
+           m[1] * MINOR(m, 1, 2, 3, 0, 2, 3) +
+           m[2] * MINOR(m, 1, 2, 3, 0, 1, 3) -
+           m[3] * MINOR(m, 1, 2, 3, 0, 1, 2);
+}
+ 
+ 
+internal inline mat4 
+mat4_inverse(mat4 mat)
+{
+    mat4 out;
+    adjoint(mat.data, out.data);
+ 
+    f32 inv_det = 1.0f / det(mat.data);
+    for(int i = 0; i < 16; ++i)
+        out.data[i] = out.data[i] * inv_det;
+
+    return out;
+}
+
 
 internal inline mat4
 mat4_look_at(vec3 eye, vec3 target, vec3 up)
