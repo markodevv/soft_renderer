@@ -173,18 +173,10 @@ bitmap_draw_rect(i32 px, i32 py, i32 w, i32 h)
 
 
 internal void
-draw_triangle(Renderer* ren, vec3 v[3], vec3 uv[3], vec3 vn[3], u8* texture)
+draw_triangle(Renderer* ren, vec3 v[3], vec3 uv[3], vec3 vertex_normals[3], u8* texture)
 {
-    if (v[0].y > v[1].y) { swap(&v[0], &v[1]); }
-    if (v[0].y > v[2].y) { swap(&v[0], &v[2]); }
-    if (v[1].y > v[2].y) { swap(&v[1], &v[2]); }
-    if (uv[0].y > uv[1].y) { swap(&uv[0], &uv[1]); }
-    if (uv[0].y > uv[2].y) { swap(&uv[0], &uv[2]); }
-    if (uv[1].y > uv[2].y) { swap(&uv[1], &uv[2]); }
 
     Box box = triangle_bounding_box(v);
-    //normal = vec3_cross(v[2]-v[1], v[2]-v[0]);
-    //normal = vec3_normalized(normal);
 
     for (i32 y = (i32)box.y1; y <= (i32)box.y2; ++y)
     {
@@ -201,9 +193,9 @@ draw_triangle(Renderer* ren, vec3 v[3], vec3 uv[3], vec3 vn[3], u8* texture)
             for (i32 i = 0; i < 3; ++i)
             {
                 z += v[i].z * bc_coord[i];
-                normal.x += vn[i].x * bc_coord[i];
-                normal.y += vn[i].y * bc_coord[i];
-                normal.z += vn[i].z * bc_coord[i];
+                normal.x += vertex_normals[i].x * bc_coord[i];
+                normal.y += vertex_normals[i].y * bc_coord[i];
+                normal.z += vertex_normals[i].z * bc_coord[i];
             }
             normal = vec3_normalized(normal);
 
@@ -225,14 +217,11 @@ draw_triangle(Renderer* ren, vec3 v[3], vec3 uv[3], vec3 vn[3], u8* texture)
 
                 ren->z_buffer[y * Bitmap_Width + x] = z;
                 Color color;
-                if (reflected_cos >= 0.99)
+                if (reflected_cos >= 0.98f)
                 {
                     specular = min(reflected_cos*50, 155);
                 }
-                light = min((100 * diffuse + specular), 255);
-
-                if (light <= 0.0f)
-                    light = 0.0f;
+                light = max((100 * diffuse + specular), 0.0f);
 
                 color.r = light;
                 color.g = light;
@@ -468,9 +457,9 @@ draw_model(Renderer* ren, Model* model)
             vec4 vn = mat4_transpose(mat4_inverse(MVP)) * temp4D;
                      
             temp4D = {vertex.x, vertex.y, vertex.z, 1.0f};
-            vec4 temp = MVP * temp4D;
+            vec4 wc = MVP * temp4D;
 
-            tri.world_coord[j] = {temp.x/temp.w, temp.y/temp.w, temp.z/temp.w};
+            tri.world_coord[j] = {wc.x/wc.w, wc.y/wc.w, wc.z/wc.w};
             tri.uv_coord[j] = texture_uv_from_face(face, model->texture_uvs, j);
             vertex_normals[j] = vec3_normalized(vn.xyz);
         }
@@ -571,8 +560,10 @@ WinMain(HINSTANCE hinstance,
     renderer.camera.direction = {0.0f, 0.0f, 1.0f};
     renderer.camera.up = {0.0f, 1.0f, 0.0f};
 
-    Model head_model = load_model("../assets/head/head.obj");
-    head_model.scale = {1.0f, 1.0f, 1.0f};
+    Model model = load_model("../assets/head/head.obj");
+    model.scale = {0.5f, 0.5f, 0.5f};
+    model.position = {};
+    model.rotation = {};
 
 
     win32_resize_bitmap(Bitmap_Width, Bitmap_Height, &renderer);
@@ -642,7 +633,7 @@ WinMain(HINSTANCE hinstance,
 
                     if ((message.wParam & MK_LBUTTON) == MK_LBUTTON)
                     {
-                        head_model.rotation = mouse_position - starting_mouse_position;
+                        model.rotation = mouse_position - starting_mouse_position;
                     }
                 } break;
                 case WM_MOUSEWHEEL:
@@ -695,7 +686,7 @@ WinMain(HINSTANCE hinstance,
         HDC device_context = GetDC(window_handle);
 
         clear_screen(&renderer);
-        draw_model(&renderer, &head_model);
+        draw_model(&renderer, &model);
 
         StretchDIBits(device_context,
                      0, 0, Bitmap_Width, Bitmap_Height,
