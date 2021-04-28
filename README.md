@@ -13,6 +13,8 @@ First run the **startup.bat** file, and it will set up stuff and open a cmd prom
 (note that you may need to change the vcvarsall.bat path in startup.bat depending on your Visual Studio version and location)
 Simply run the **build.bat** file from cmd and it will hopefuly compile.
 
+Or you can download the current build on [Release](https://github.com/bisevac-marko/soft_renderer/releases/tag/main) page.
+
 ## Usage
 
 Use mouse to rotate the model and scroll to zoom.
